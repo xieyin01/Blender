@@ -1,20 +1,16 @@
-from vertex_weight_addon.common.i18n.dictionary import preprocess_dictionary
-
 dictionary = {
     "zh_CN": {
-        ("*", "Example Addon Side Bar Panel"): "示例插件面板",
-        ("*", "Example Functions"): "示例功能",
-        ("*", "ExampleAddon"): "示例插件",
-        ("*", "Resource Folder"): "资源文件夹",
-        ("*", "Int Config"): "整数参数",
-        # This is not a standard way to define a translation, but it is still supported with preprocess_dictionary.
-        "Boolean Config": "布尔参数",
-        "Second Panel": "第二面板",
-        ("*", "Add-on Preferences View"): "插件设置面板",
-        ("Operator", "ExampleOperator"): "示例操作",
+        "Vertex Weight": "顶点权重",
+        "Vertex Groups": "顶点组",
+        "Active Group": "活动组",
+        "Weight": "权重",
+        "Vertex Index": "顶点索引",
+        "Select by Weight": "按权重选择",
+        "Normalize Weights": "归一化权重",
+        "Copy Weights": "复制权重",
+        "Threshold": "阈值",
+        "Display Weights": "显示权重",
+        "Text Size": "文字大小",
+        "Color Mode": "颜色模式",
     }
 }
-
-dictionary = preprocess_dictionary(dictionary)
-
-dictionary["zh_HANS"] = dictionary["zh_CN"]

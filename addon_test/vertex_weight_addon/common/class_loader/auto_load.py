@@ -27,7 +27,6 @@ def init():
     global modules
     global ordered_classes
     global frame_work_classes
-    # notice here, the path root is the root of the project
     modules = get_all_submodules(Path(__file__).parent.parent.parent)
     ordered_classes = get_ordered_classes_to_register(modules)
     frame_work_classes = get_framework_classes(modules)
@@ -46,6 +45,7 @@ def register():
     for cls in frame_work_classes:
         register_framework_class(cls)
 
+
 def unregister():
     for cls in reversed(ordered_classes):
         bpy.utils.unregister_class(cls)
@@ -59,9 +59,6 @@ def unregister():
     for cls in frame_work_classes:
         unregister_framework_class(cls)
 
-
-# Import modules
-#################################################
 
 def get_all_submodules(directory):
     return list(iter_submodules(directory))
@@ -85,9 +82,6 @@ def iter_submodule_names(path, root=""):
         else:
             yield root + module_name
 
-
-# Find classes to register
-#################################################
 
 def get_ordered_classes_to_register(modules):
     return toposort(get_register_deps_dict(modules))
@@ -188,15 +182,11 @@ def get_framework_base_classes():
     return {ExpandableUi}
 
 
-# Find order to register to solve dependencies
-#################################################
-
 def toposort(deps_dict):
     sorted_list = []
     sorted_values = set()
     while len(deps_dict) > 0:
         unsorted = []
-        # class with no dependencies
         independent = []
         for value, deps in deps_dict.items():
             if len(deps) == 0:
@@ -204,9 +194,7 @@ def toposort(deps_dict):
             else:
                 unsorted.append(value)
 
-        # sort no dependencies by _reg_order
         independent.sort(key=lambda x: getattr(x, "_reg_order", float('inf')))
-        # add to sorted list
         for value in independent:
             sorted_list.append(value)
             sorted_values.add(value)
@@ -234,14 +222,12 @@ def unregister_framework_class(cls):
             getattr(bpy.types, cls.target_id).remove(cls.draw)
 
 
-# support adding properties in a declarative way
 def add_properties(property_dict: dict[typing.Any, dict[str, typing.Any]]):
     for cls, properties in property_dict.items():
         for name, prop in properties.items():
             setattr(cls, name, prop)
 
 
-# support removing properties in a declarative way
 def remove_properties(property_dict: dict[typing.Any, dict[str, typing.Any]]):
     for cls, properties in property_dict.items():
         for name in properties.keys():
