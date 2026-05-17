@@ -191,3 +191,163 @@ class ToggleWeightOverlay(bpy.types.Operator):
         state = 'ON' if context.scene.vw_display_weights else 'OFF'
         self.report({'INFO'}, f"Weight display: {state}")
         return {'FINISHED'}
+
+
+def populate_weight_list(scene, obj, group_index):
+    """Fill the CollectionProperty with vertices weighted to the given group"""
+    items = scene.vw_bone_weights
+    items.clear()
+    mesh = obj.data
+
+    for vert in mesh.vertices:
+        for g in vert.groups:
+            if g.group == group_index and g.weight > 0.0:
+                item = items.add()
+                item.vertex_index = vert.index
+                item.weight = g.weight
+                break
+
+    scene.vw_active_weight_index = -1
+
+
+class SelectBoneOperator(bpy.types.Operator):
+    """Select a bone and show its weighted vertices"""
+    bl_idname = "vw.select_bone"
+    bl_label = "Select Bone"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    group_index: bpy.props.IntProperty(default=-1)  # type: ignore
+
+    @classmethod
+    def poll(cls, context: bpy.types.Context):
+        obj = context.active_object
+        if not obj or obj.type != 'MESH':
+            return False
+        return len(obj.vertex_groups) > 0
+
+    def execute(self, context: bpy.types.Context):
+        obj = context.active_object
+        if self.group_index < 0 or self.group_index >= len(obj.vertex_groups):
+            self.report({'ERROR'}, "Invalid bone index")
+            return {'CANCELLED'}
+
+        obj.vertex_groups.active_index = self.group_index
+        populate_weight_list(context.scene, obj, self.group_index)
+
+        group_name = obj.vertex_groups[self.group_index].name
+        self.report({'INFO'}, f"Showing weights for: {group_name}")
+        return {'FINISHED'}
+
+
+class ApplyWeightEditOperator(bpy.types.Operator):
+    """Write edited weights back to the mesh vertex groups"""
+    bl_idname = "vw.apply_weight_edit"
+    bl_label = "Apply to Mesh"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context: bpy.types.Context):
+        obj = context.active_object
+        if not obj or obj.type != 'MESH':
+            return False
+        return obj.vertex_groups.active is not None
+
+    def execute(self, context: bpy.types.Context):
+        obj = context.active_object
+        scene = context.scene
+        group = obj.vertex_groups.active
+        items = scene.vw_bone_weights
+
+        if len(items) == 0:
+            self.report({'WARNING'}, "No weights to apply")
+            return {'CANCELLED'}
+
+        applied = 0
+        for item in items:
+            new_weight = item.weight
+            group.add([item.vertex_index], new_weight, 'REPLACE')
+            applied += 1
+
+        obj.data.update()
+
+        # Refresh the list to reflect actual mesh state
+        populate_weight_list(scene, obj, group.index)
+
+        self.report({'INFO'}, f"Applied {applied} weight changes")
+        return {'FINISHED'}
+
+
+class SelectBoneVerticesOperator(bpy.types.Operator):
+    """Select all vertices that have weight in the active bone"""
+    bl_idname = "vw.select_bone_verts"
+    bl_label = "Select Bone Vertices"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context: bpy.types.Context):
+        obj = context.active_object
+        if not obj or obj.type != 'MESH':
+            return False
+        return obj.vertex_groups.active is not None
+
+    def execute(self, context: bpy.types.Context):
+        obj = context.active_object
+        mesh = obj.data
+        group = obj.vertex_groups.active
+
+        original_mode = obj.mode
+        if obj.mode != 'OBJECT':
+            bpy.ops.object.mode_set(mode='OBJECT')
+
+        for vert in mesh.vertices:
+            vert.select = False
+
+        count = 0
+        for vert in mesh.vertices:
+            for g in vert.groups:
+                if g.group == group.index and g.weight > 0.0:
+                    vert.select = True
+                    count += 1
+                    break
+
+        mesh.update()
+        if original_mode != 'OBJECT':
+            bpy.ops.object.mode_set(mode=original_mode)
+
+        self.report({'INFO'}, f"Selected {count} vertices")
+        return {'FINISHED'}
+
+
+class SetWeightValueOperator(bpy.types.Operator):
+    """Set weight to a specific value for all listed vertices"""
+    bl_idname = "vw.set_weight_value"
+    bl_label = "Set Weight Value"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    target_weight: bpy.props.FloatProperty(
+        name="Weight",
+        default=1.0,
+        min=0.0,
+        max=1.0,
+        subtype='FACTOR',
+    )  # type: ignore
+
+    @classmethod
+    def poll(cls, context: bpy.types.Context):
+        obj = context.active_object
+        if not obj or obj.type != 'MESH':
+            return False
+        return len(context.scene.vw_bone_weights) > 0
+
+    def execute(self, context: bpy.types.Context):
+        scene = context.scene
+        items = scene.vw_bone_weights
+
+        for item in items:
+            item.weight = self.target_weight
+
+        self.report({'INFO'}, f"Set {len(items)} vertices to weight: {self.target_weight:.3f}")
+        return {'FINISHED'}
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self)

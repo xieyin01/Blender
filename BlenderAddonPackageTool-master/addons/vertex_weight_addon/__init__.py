@@ -2,6 +2,7 @@ import bpy
 
 from .config import __addon_name__
 from .i18n.dictionary import dictionary
+from .properties import BoneWeightItem
 from ...common.class_loader import auto_load
 from ...common.class_loader.auto_load import add_properties, remove_properties
 from ...common.i18n.dictionary import common_dictionary
@@ -51,6 +52,15 @@ _addon_properties = {
             min=0.0,
             max=1.0,
             subtype='FACTOR',
+        ),
+        "vw_bone_weights": bpy.props.CollectionProperty(
+            type=BoneWeightItem,
+            name="Bone Weights",
+            description="Vertex weight entries for the active bone",
+        ),
+        "vw_active_weight_index": bpy.props.IntProperty(
+            name="Active Weight Index",
+            default=-1,
         ),
     },
 }

@@ -7,12 +7,20 @@ from ..operators.AddonOperators import (
     NormalizeWeightsOperator,
     CopyVertexWeightsOperator,
     ToggleWeightOverlay,
+    SelectBoneOperator,
+    ApplyWeightEditOperator,
+    SelectBoneVerticesOperator,
+    SetWeightValueOperator,
 )
 from ....common.i18n.i18n import i18n
 from ....common.types.framework import reg_order
 
 _draw_handles = {}
 
+
+# ═══════════════════════════════════════════════════════════════
+#  Color helpers
+# ═══════════════════════════════════════════════════════════════
 
 def get_weight_color(weight, scheme="SPINE2D"):
     """Get RGBA color for a weight value (0.0 ~ 1.0)"""
@@ -35,12 +43,16 @@ def get_weight_color(weight, scheme="SPINE2D"):
         return (w, w, w, 1.0)
 
 
+# ═══════════════════════════════════════════════════════════════
+#  Viewport overlay
+# ═══════════════════════════════════════════════════════════════
+
 def draw_vertex_weight_overlay():
     """Draw weight labels on vertices in the 3D viewport"""
     context = bpy.context
     scene = context.scene
 
-    if not scene.vw_display_weights:
+    if not getattr(scene, "vw_display_weights", False):
         return
 
     obj = context.active_object
@@ -56,8 +68,8 @@ def draw_vertex_weight_overlay():
         max_weights = prefs.max_weights_per_vertex
         show_zero = prefs.show_zero_weights
     else:
-        text_size = scene.vw_text_size
-        color_scheme = scene.vw_color_mode
+        text_size = getattr(scene, "vw_text_size", 14)
+        color_scheme = getattr(scene, "vw_color_mode", "SPINE")
         max_weights = 4
         show_zero = False
 
@@ -127,6 +139,29 @@ def disable_overlay():
         del _draw_handles["weight_overlay"]
 
 
+# ═══════════════════════════════════════════════════════════════
+#  UILists
+# ═══════════════════════════════════════════════════════════════
+
+class VIEW3D_UL_weight_list(bpy.types.UIList):
+    """Display vertex index and weight for the active bone"""
+    bl_idname = "VIEW3D_UL_weight_list"
+
+    def draw_item(self, context, layout, data, item, icon, active_data,
+                  active_property, index=0, flt_flag=0):
+        if self.layout_type in {'DEFAULT', 'COMPACT'}:
+            row = layout.row(align=True)
+            row.label(text=f"#{item.vertex_index}", icon='DOT')
+            row.prop(item, "weight", text="", emboss=True, slider=True)
+        elif self.layout_type == 'GRID':
+            layout.alignment = 'CENTER'
+            layout.label(text=f"#{item.vertex_index}: {item.weight:.2f}")
+
+
+# ═══════════════════════════════════════════════════════════════
+#  Panels
+# ═══════════════════════════════════════════════════════════════
+
 class BasePanel:
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
@@ -140,7 +175,7 @@ class BasePanel:
 
 @reg_order(0)
 class VIEW3D_PT_vertex_weight_main(BasePanel, bpy.types.Panel):
-    """Spine2D-style vertex weight viewer panel"""
+    """Spine2D-style bone weight editor"""
     bl_label = "Vertex Weights"
     bl_idname = "VIEW3D_PT_vertex_weight_main"
 
@@ -157,128 +192,101 @@ class VIEW3D_PT_vertex_weight_main(BasePanel, bpy.types.Panel):
         row.operator(ToggleWeightOverlay.bl_idname, text=label, icon=icon,
                       depress=scene.vw_display_weights)
 
-        # ---- Mesh info box ----
+        # ---- Mesh info ----
         box = layout.box()
-        box.label(text=f"Mesh: {obj.name}  |  Verts: {len(mesh.vertices)}",
-                   icon='MESH_DATA')
+        box.label(text=f"Object: {obj.name}", icon='OBJECT_DATA')
+        row = box.row(align=True)
+        row.label(text=f"Vertices: {len(mesh.vertices)}")
         if len(mesh.polygons) == 0:
-            box.label(text="No face data (point cloud / faceless mesh)", icon='INFO')
+            row.label(text="|  Faceless mesh", icon='INFO')
         else:
-            box.label(text=f"Faces: {len(mesh.polygons)}", icon='FACESEL')
+            row.label(text=f"|  Faces: {len(mesh.polygons)}")
 
-        # ---- Vertex groups ----
+        # ---- Bone list ----
         layout.separator()
-        layout.label(text="Vertex Groups (Bones):", icon='GROUP_VERTEX')
+        layout.label(text="Bones:", icon='BONE_DATA')
 
         if len(obj.vertex_groups) == 0:
-            layout.label(text="  No vertex groups found", icon='ERROR')
+            layout.label(text="  No bones (vertex groups)", icon='ERROR')
             return
 
-        active_group = obj.vertex_groups.active
-        if active_group:
-            box = layout.box()
-            box.prop_search(obj.vertex_groups, "active_index",
-                            obj, "vertex_groups", text="Active")
-
-            weight_count = 0
-            total_weight = 0.0
+        box = layout.box()
+        active_idx = obj.vertex_groups.active_index
+        for idx, group in enumerate(obj.vertex_groups):
+            # Count weighted vertices for this group
+            vcount = 0
             for vert in mesh.vertices:
                 for g in vert.groups:
-                    if g.group == active_group.index and g.weight > 0:
-                        weight_count += 1
-                        total_weight += g.weight
+                    if g.group == idx and g.weight > 0.0:
+                        vcount += 1
+                        break
 
-            box.label(text=f"  Vertices weighted: {weight_count}")
-            if weight_count > 0:
-                box.label(text=f"  Avg weight: {total_weight / weight_count:.3f}")
+            row = box.row(align=True)
+            # Highlight active bone
+            if idx == active_idx:
+                row.label(text=f"▸ {group.name}", icon='GROUP_VERTEX')
+            else:
+                row.label(text=f"  {group.name}", icon='BLANK1')
 
-            col = box.column(align=True)
-            col.prop(scene, "vw_weight_threshold", text="Threshold")
-            op = col.operator(SelectByWeightOperator.bl_idname, text="Select Above")
-            op.mode = "ABOVE"
-            op = col.operator(SelectByWeightOperator.bl_idname, text="Select Non-Zero")
-            op.mode = "NONZERO"
+            row.label(text=f"{vcount} verts")
 
-        # ---- Operators ----
-        layout.separator()
-        col = layout.column(align=True)
-        col.operator(NormalizeWeightsOperator.bl_idname, text="Normalize Weights",
-                      icon='NORMALIZE_WEIGHTS')
-        col.operator(CopyVertexWeightsOperator.bl_idname, text="Copy Weights",
-                      icon='COPYDOWN')
+            op = row.operator(SelectBoneOperator.bl_idname, text="Select")
+            op.group_index = idx
 
-        # ---- Vertex detail ----
-        layout.separator()
-        layout.label(text="Vertex Weight Detail:", icon='VERTEXSEL')
-
-        selected_count = sum(1 for v in mesh.vertices if v.select)
-        if selected_count == 0:
-            layout.label(text="  Select vertices to see weights")
-            layout.label(text="  (Switch to Edit Mode, select vertices)")
+        # ---- Weight editor box ----
+        if obj.vertex_groups.active is None:
             return
 
-        layout.label(text=f"  {selected_count} vertices selected")
+        layout.separator()
+        active_group = obj.vertex_groups.active
+        box = layout.box()
+        box.label(
+            text=f"{active_group.name} — Weights",
+            icon='GROUP_VERTEX'
+        )
 
-        if selected_count > 1:
-            layout.label(text="  Select exactly one vertex for detail")
+        items = scene.vw_bone_weights
+
+        if len(items) == 0:
+            box.label(text="  Click [Select] on a bone to load weights")
             return
 
-        # Single vertex selected → show weight breakdown
-        for vert in mesh.vertices:
-            if not vert.select:
-                continue
+        # Weight list
+        box.template_list(
+            "VIEW3D_UL_weight_list", "",
+            scene, "vw_bone_weights",
+            scene, "vw_active_weight_index",
+            rows=min(6, len(items)),
+        )
 
-            box = layout.box()
-            box.label(text=f"  Vertex #{vert.index}", icon='DOT')
-            box.label(text=f"  Pos: ({vert.co.x:.2f}, {vert.co.y:.2f}, {vert.co.z:.2f})")
+        # Edit selected weight
+        idx = scene.vw_active_weight_index
+        if 0 <= idx < len(items):
+            item = items[idx]
+            row = box.row(align=True)
+            row.label(text=f"  Vertex #{item.vertex_index}", icon='DOT')
+            col = row.column()
+            col.prop(item, "weight", text="", slider=True)
+            row.label(text=f"{item.weight * 100:.1f}%")
 
-            if not vert.groups:
-                box.label(text="  (no weights)", icon='BLANK1')
-                break
+        # Action buttons
+        row = box.row(align=True)
+        row.operator(ApplyWeightEditOperator.bl_idname,
+                      text="Apply to Mesh", icon='CHECKMARK')
+        row.operator(SelectBoneVerticesOperator.bl_idname,
+                      text="Select Verts", icon='RESTRICT_SELECT_OFF')
 
-            groups = [(g.group, g.weight) for g in vert.groups]
-            groups.sort(key=lambda x: x[1], reverse=True)
-
-            for group_idx, weight in groups:
-                group_name = (obj.vertex_groups[group_idx].name
-                              if group_idx < len(obj.vertex_groups)
-                              else f"Group[{group_idx}]")
-                row = box.row(align=True)
-                row.label(text=f"    {group_name}")
-                row.label(text=f"{weight:.4f}  ({weight * 100:.1f}%)")
-            break
+        row = box.row(align=True)
+        op = row.operator(SetWeightValueOperator.bl_idname,
+                           text="Set All...", icon='PROPERTIES')
+        row.operator(NormalizeWeightsOperator.bl_idname,
+                      text="Normalize", icon='NORMALIZE_WEIGHTS')
+        op_all = row.operator(NormalizeWeightsOperator.bl_idname,
+                               text="Norm.All")
+        op_all.all_vertices = True
 
 
 @reg_order(1)
-class VIEW3D_PT_vertex_weight_list(BasePanel, bpy.types.Panel):
-    bl_label = "Per-Group Weights"
-    bl_idname = "VIEW3D_PT_vertex_weight_list"
-    bl_parent_id = "VIEW3D_PT_vertex_weight_main"
-
-    def draw(self, context: bpy.types.Context):
-        layout = self.layout
-        obj = context.active_object
-        mesh = obj.data
-
-        selected_count = sum(1 for v in mesh.vertices if v.select)
-        if selected_count != 1 or len(obj.vertex_groups) == 0:
-            layout.label(text="Select exactly one vertex")
-            return
-
-        for vert in mesh.vertices:
-            if not vert.select:
-                continue
-            for g_entry in sorted(vert.groups, key=lambda x: x.weight, reverse=True):
-                if g_entry.group >= len(obj.vertex_groups):
-                    continue
-                group = obj.vertex_groups[g_entry.group]
-                row = layout.row(align=True)
-                row.label(text=group.name)
-                row.label(text=f"{g_entry.weight:.4f}")
-            break
-
-
-@reg_order(2)
 class VIEW3D_PT_vertex_weight_display_opts(BasePanel, bpy.types.Panel):
     bl_label = "Display Options"
     bl_idname = "VIEW3D_PT_vertex_weight_display_opts"
@@ -290,11 +298,19 @@ class VIEW3D_PT_vertex_weight_display_opts(BasePanel, bpy.types.Panel):
         scene = context.scene
         layout.prop(scene, "vw_text_size")
         layout.prop(scene, "vw_color_mode")
+        layout.prop(scene, "vw_weight_threshold")
 
+
+# ═══════════════════════════════════════════════════════════════
+#  Registration helpers
+# ═══════════════════════════════════════════════════════════════
 
 def register_overlay_on_load():
-    if bpy.context.scene.vw_display_weights:
-        enable_overlay()
+    try:
+        if getattr(bpy.context.scene, "vw_display_weights", False):
+            enable_overlay()
+    except AttributeError:
+        pass
 
 
 def register():
