@@ -2,7 +2,7 @@ import bpy
 
 from .config import __addon_name__
 from .i18n.dictionary import dictionary
-from .properties import BoneWeightItem
+from .operators.AddonOperators import BoneWeightItem
 from ...common.class_loader import auto_load
 from ...common.class_loader.auto_load import add_properties, remove_properties
 from ...common.i18n.dictionary import common_dictionary
