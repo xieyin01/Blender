@@ -38,16 +38,11 @@ _addon_properties = {
             name="Color Mode",
             description="Color scheme for weight display",
             items=[
+                ("SPINE", "Spine2D", "Spine2D-style colors"),
                 ("HEAT", "Heat", "Red (hot) to blue (cold)"),
                 ("GRAY", "Grayscale", "Black to white"),
-                ("SPINE", "Spine2D", "Spine2D-style colors"),
             ],
             default="SPINE",
-        ),
-        "vw_selected_vertex_index": bpy.props.IntProperty(
-            name="Selected Vertex",
-            description="Currently inspected vertex index",
-            default=-1,
         ),
         "vw_weight_threshold": bpy.props.FloatProperty(
             name="Weight Threshold",
