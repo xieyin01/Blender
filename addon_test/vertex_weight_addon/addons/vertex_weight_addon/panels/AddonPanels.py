@@ -183,6 +183,11 @@ class VIEW3D_PT_vertex_weight_main(BasePanel, bpy.types.Panel):
         layout = self.layout
         obj = context.active_object
         scene = context.scene
+
+        if not hasattr(scene, "vw_bone_weights"):
+            layout.label(text="Initializing...", icon='SORTTIME')
+            return
+
         mesh = obj.data
 
         # ---- Toggle overlay ----
@@ -296,6 +301,8 @@ class VIEW3D_PT_vertex_weight_display_opts(BasePanel, bpy.types.Panel):
     def draw(self, context: bpy.types.Context):
         layout = self.layout
         scene = context.scene
+        if not hasattr(scene, "vw_text_size"):
+            return
         layout.prop(scene, "vw_text_size")
         layout.prop(scene, "vw_color_mode")
         layout.prop(scene, "vw_weight_threshold")
